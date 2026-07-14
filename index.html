@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Симулятор монтажа аппаратной стойки VSAT</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#0b0d10;
+    --bg-grid:#12151a;
+    --panel:#24272c;
+    --panel-2:#2b2f35;
+    --panel-3:#33373e;
+    --rail:#1a1c1f;
+    --metal-edge:#454a52;
+    --text:#e7e9ec;
+    --text-dim:#8b919b;
+    --text-faint:#5c626b;
+    --accent:#3fb8ff;
+    --led-green:#39e07a;
+    --led-green-dim:#1d4d33;
+    --led-red:#ff4444;
+    --led-red-dim:#4d1d1d;
+    --led-amber:#ffb020;
+    --lcd:#0fe0e8;
+    --lcd-bg:#03181a;
+    --wire-power:#e0553f;
+    --wire-rj45:#3fa9ff;
+    --wire-coax:#c7cbd1;
+    --wire-audio:#43d18a;
+    --mono: 'JetBrains Mono','Consolas','SFMono-Regular',monospace;
+    --sans: 'Segoe UI','Inter',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{
+    background:
+      radial-gradient(ellipse at 20% -10%, #1a2530 0%, transparent 55%),
+      radial-gradient(ellipse at 90% 0%, #23161a 0%, transparent 45%),
+      var(--bg);
+    min-height:100vh;
+    display:flex;flex-direction:column;
+  }
+  header{
+    padding:14px 22px;
+    border-bottom:1px solid #1c1f24;
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    background:linear-gradient(180deg,#14161a,#0e1013);
+  }
+  header h1{
+    font-family:var(--mono);
+    font-size:15px;letter-spacing:.14em;text-transform:uppercase;
+    margin:0;color:var(--accent);font-weight:600;
+  }
+  header .sub{font-size:11px;color:var(--text-faint);font-family:var(--mono);letter-spacing:.05em;}
+  .spacer{flex:1;}
+  .btn{
+    font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+    background:var(--panel-2);color:var(--text);
+    border:1px solid #3a3e45;border-radius:3px;
+    padding:9px 16px;cursor:pointer;transition:.15s;
+    text-transform:uppercase;
+  }
+  .btn:hover{background:var(--panel-3);border-color:var(--accent);color:var(--accent);}
+  .btn:active{transform:translateY(1px);}
+  .btn.primary{border-color:var(--led-green);color:var(--led-green);}
+  .btn.primary:hover{background:#123020;}
+  .btn.danger{border-color:var(--wire-power);color:var(--wire-power);}
+  .btn.danger:hover{background:#331313;}
+  .btn:disabled{opacity:.4;cursor:default;pointer-events:none;}
+
+  .layout{flex:1;display:flex;min-height:0;}
+  #stageWrap{flex:1;overflow:auto;padding:24px;position:relative;}
+  #stage{display:block;margin:0 auto;user-select:none;-webkit-user-select:none;}
+
+  aside{
+    width:300px;border-left:1px solid #1c1f24;background:#101216;
+    padding:16px;overflow-y:auto;font-family:var(--mono);font-size:12px;
+  }
+  aside h2{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-faint);margin:0 0 10px;border-bottom:1px solid #22262b;padding-bottom:8px;}
+  .status-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #1f2227;}
+  .status-row .dot{width:9px;height:9px;border-radius:50%;background:#3a3e45;box-shadow:none;flex-shrink:0;}
+  .status-row .dot.on{background:var(--led-green);box-shadow:0 0 8px var(--led-green);}
+  .status-row .dot.alarm{background:var(--led-red);box-shadow:0 0 8px var(--led-red);}
+  .status-row .label{color:var(--text-dim);flex:1;margin-left:8px;}
+  .status-row .val{color:var(--text);font-weight:600;}
+
+  #log{margin-top:16px;height:180px;overflow-y:auto;background:#0a0b0d;border:1px solid #1f2227;border-radius:4px;padding:8px;font-size:11px;line-height:1.5;color:var(--text-dim);}
+  #log div.ok{color:var(--led-green);}
+  #log div.err{color:var(--wire-power);}
+  #log div.info{color:var(--accent);}
+
+  .legend{margin-top:16px;}
+  .legend-item{display:flex;align-items:center;gap:8px;padding:3px 0;color:var(--text-dim);}
+  .legend-swatch{width:22px;height:4px;border-radius:2px;flex-shrink:0;}
+
+  /* SVG element helpers */
+  .device-label{font-family:var(--mono);fill:var(--text);font-size:11px;letter-spacing:.03em;}
+  .device-sublabel{font-family:var(--mono);fill:var(--text-faint);font-size:9px;letter-spacing:.06em;}
+  .port-label{font-family:var(--mono);fill:var(--text-faint);font-size:8px;}
+  .led-text{font-family:var(--mono);fill:var(--text-faint);font-size:7px;letter-spacing:.03em;}
+
+  .uuzs-btn{cursor:pointer;}
+  .uuzs-btn circle{transition:.08s;}
+  .port{cursor:pointer;}
+  .port.port-compatible .port-shape{stroke:var(--led-green);stroke-width:2.5;filter:drop-shadow(0 0 5px var(--led-green));cursor:pointer;}
+  .port.port-dim .port-shape{opacity:.3;}
+  .port.port-selected .port-shape{stroke:#fff;stroke-width:3;filter:drop-shadow(0 0 9px var(--accent));animation:pulse 1s infinite;}
+  .port:hover .port-shape{stroke:var(--accent);stroke-width:2.5;filter:drop-shadow(0 0 4px var(--accent));}
+  .port-shape{transition:.1s;}
+
+  .cable-layer path{fill:none;stroke-linecap:round;}
+  .cable-hit{stroke:transparent;stroke-width:16;cursor:pointer;}
+  .cable-visible{pointer-events:none;}
+  .cable-hit:hover ~ .cable-visible, .cable-hit:hover{filter:brightness(1.4);}
+
+  .rack-ear{fill:#141619;stroke:#3a3e45;stroke-width:1;}
+  .rack-hole{fill:#050607;}
+
+  #tooltip{
+    position:fixed;pointer-events:none;z-index:50;
+    background:#0d0f12;border:1px solid var(--accent);color:var(--text);
+    font-family:var(--mono);font-size:11px;padding:6px 10px;border-radius:4px;
+    box-shadow:0 4px 16px rgba(0,0,0,.5);opacity:0;transition:opacity .1s;max-width:220px;
+  }
+  #toast{
+    position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#1a1113;border:1px solid var(--wire-power);color:#ffb3ac;
+    font-family:var(--mono);font-size:12px;padding:10px 18px;border-radius:5px;
+    opacity:0;pointer-events:none;transition:.25s;z-index:60;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  .blinking{animation:pulse 1s infinite;}
+  @keyframes shake{
+    0%,100%{transform:translateX(0);}
+    20%{transform:translateX(-6px);}
+    40%{transform:translateX(6px);}
+    60%{transform:translateX(-4px);}
+    80%{transform:translateX(4px);}
+  }
+  .shake{animation:shake .35s ease;}
+
+  @keyframes soundring{
+    0%{r:6;opacity:.9;}
+    100%{r:34;opacity:0;}
+  }
+  .ring{animation:soundring 1.1s ease-out infinite;}
+
+  @media (max-width:900px){
+    aside{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Стенд монтажа&nbsp;— VSAT / УУЗС1-1Т0Р-Z</h1>
+  <span class="sub">Интерактивная модель силовой и информационной коммутации</span>
+  <div class="spacer"></div>
+  <button class="btn primary" id="btnAuto">▶ Авто-сборка</button>
+  <button class="btn danger" id="btnReset">✕ Сбросить</button>
+</header>
+
+<div class="layout">
+  <div id="stageWrap">
+    <svg id="stage" viewBox="0 0 1180 900" width="1180" height="900" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="panelGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#34383f"/>
+          <stop offset="6%" stop-color="#2b2f35"/>
+          <stop offset="94%" stop-color="#24272c"/>
+          <stop offset="100%" stop-color="#1c1e22"/>
+        </linearGradient>
+        <linearGradient id="rackGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#17191c"/>
+          <stop offset="100%" stop-color="#0e0f11"/>
+        </linearGradient>
+        <radialGradient id="lcdGlow" cx="50%" cy="50%" r="75%">
+          <stop offset="0%" stop-color="#0a3a3d"/>
+          <stop offset="100%" stop-color="#03181a"/>
+        </radialGradient>
+        <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="2.4" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <!-- background rack cabinet -->
+      <rect x="30" y="40" width="740" height="640" rx="6" fill="url(#rackGrad)" stroke="#000" stroke-width="2"/>
+      <rect x="30" y="40" width="740" height="640" rx="6" fill="none" stroke="#2a2d32" stroke-width="1"/>
+      <text x="50" y="30" class="device-sublabel" fill="#5c626b">СТОЙКА 19&quot; — АППАРАТНАЯ ЧАСТЬ</text>
+      <text x="820" y="30" class="device-sublabel" fill="#5c626b">ВЫНОСНОЕ ОБОРУДОВАНИЕ</text>
+
+      <g id="rackUnits"></g>
+      <g id="outdoorUnits"></g>
+      <g id="cableLayer" class="cable-layer"></g>
+      <g id="dragLayer" class="cable-layer"></g>
+    </svg>
+  </div>
+
+  <aside>
+    <h2>Состояние системы</h2>
+    <div class="status-row"><span class="dot" id="dotUps"></span><span class="label">ИБП — сеть 220В</span><span class="val" id="valUps">—</span></div>
+    <div class="status-row"><span class="dot" id="dotPdu"></span><span class="label">Фильтр запитан</span><span class="val" id="valPdu">—</span></div>
+    <div class="status-row"><span class="dot" id="dotModem"></span><span class="label">Модем: питание</span><span class="val" id="valModem">—</span></div>
+    <div class="status-row"><span class="dot" id="dotUuzsPwr"></span><span class="label">УУЗС: питание</span><span class="val" id="valUuzsPwr">—</span></div>
+    <div class="status-row"><span class="dot" id="dotWan"></span><span class="label">WAN (4G ETH)</span><span class="val" id="valWan">—</span></div>
+    <div class="status-row"><span class="dot" id="dotSat"></span><span class="label">SAT (VSAT)</span><span class="val" id="valSat">—</span></div>
+    <div class="status-row"><span class="dot" id="dotAudio"></span><span class="label">Аудио / громкая связь</span><span class="val" id="valAudio">—</span></div>
+
+    <h2 style="margin-top:18px;">Легенда кабелей</h2>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--wire-power)"></span>Силовой (IEC/клеммы)</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--wire-rj45)"></span>Патч-корд RJ-45</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--wire-coax)"></span>Коаксиал F-type</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--wire-audio)"></span>Акустический</div>
+    </div>
+
+    <h2 style="margin-top:18px;">Журнал событий</h2>
+    <div id="log"></div>
+  </aside>
+</div>
+
+<div id="tooltip"></div>
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------------------------------------------------------
+   PORT TYPES & COMPATIBILITY
+--------------------------------------------------------------- */
+const T = {
+  C14:'iec_c14', C13:'iec_c13', DC55:'dc55', RJ45:'rj45', F:'ftype',
+  TPWR:'term_power', TAUD:'term_audio'
+};
+const COMPAT = [
+  [T.C13, T.C14], [T.C13, T.DC55], [T.C13, T.TPWR],
+  [T.RJ45, T.RJ45], [T.F, T.F], [T.TAUD, T.TAUD]
+];
+function compatible(a,b){
+  return COMPAT.some(p => (p[0]===a && p[1]===b) || (p[0]===b && p[1]===a));
+}
+const KIND_OF = { // used for cable color
+  [T.C13]:'power', [T.C14]:'power', [T.DC55]:'power', [T.TPWR]:'power',
+  [T.RJ45]:'rj45', [T.F]:'coax', [T.TAUD]:'audio'
+};
+const WIRE_COLOR = { power:'var(--wire-power)', rj45:'var(--wire-rj45)', coax:'var(--wire-coax)', audio:'var(--wire-audio)' };
+const PORT_SHAPE = { // rendering hints
+  [T.C14]:{shape:'rect', fill:'#caa23a', w:14,h:10},
+  [T.C13]:{shape:'rect', fill:'#caa23a', w:14,h:10},
+  [T.DC55]:{shape:'circle', fill:'#8a8f98', r:6},
+  [T.RJ45]:{shape:'rect', fill:'#3fa9ff', w:12,h:11},
+  [T.F]:{shape:'circle', fill:'#c7cbd1', r:7},
+  [T.TPWR]:{shape:'rect', fill:'#e0553f', w:16,h:9},
+  [T.TAUD]:{shape:'rect', fill:'#43d18a', w:16,h:9},
+};
+const PORT_NAME = {
+  [T.C14]:'IEC C14 (вход 220В)', [T.C13]:'IEC C13 (выход 220В)', [T.DC55]:'DC 5.5мм 12В',
+  [T.RJ45]:'RJ-45', [T.F]:'F-type (коаксиал)', [T.TPWR]:'Клеммник питания',
+  [T.TAUD]:'Клеммник аудио'
+};
+
+/* ---------------------------------------------------------------
+   DEVICE / RACK LAYOUT
+--------------------------------------------------------------- */
+const RACK_X = 55, RACK_W = 690;
+
+const devices = [
+  {
+    id:'ups', x:RACK_X, y:65, w:RACK_W, h:100, label:'ИБП POWERCOM VANGUARD RM', sub:'UNINTERRUPTIBLE POWER SUPPLY · 1U',
+    ports:[
+      {id:'ups_in', type:T.C14, rx:22, ry:52, dir:'in', label:'IN 220В', fixed:true},
+      {id:'ups_out1', type:T.C13, rx:470, ry:82, dir:'out', label:'OUT1'},
+      {id:'ups_out2', type:T.C13, rx:510, ry:82, dir:'out', label:'OUT2'},
+      {id:'ups_out3', type:T.C13, rx:550, ry:82, dir:'out', label:'OUT3'},
+      {id:'ups_out4', type:T.C13, rx:590, ry:82, dir:'out', label:'OUT4'},
+    ]
+  },
+  {
+    id:'pdu', x:RACK_X, y:180, w:RACK_W, h:90, label:'СЕТЕВОЙ ФИЛЬТР (PDU)', sub:'POWER DISTRIBUTION UNIT · 1U',
+    ports:[
+      {id:'pdu_in', type:T.C14, rx:22, ry:45, dir:'in', label:'IN'},
+      {id:'pdu_out1', type:T.C13, rx:470, ry:72, dir:'out', label:'OUT1'},
+      {id:'pdu_out2', type:T.C13, rx:510, ry:72, dir:'out', label:'OUT2'},
+      {id:'pdu_out3', type:T.C13, rx:550, ry:72, dir:'out', label:'OUT3'},
+      {id:'pdu_out4', type:T.C13, rx:590, ry:72, dir:'out', label:'OUT4'},
+    ]
+  },
+  {
+    id:'modem', x:RACK_X, y:285, w:RACK_W, h:90, label:'МОДЕМ 4G/LTE ПРОМЫШЛЕННЫЙ', sub:'INDUSTRIAL LTE ROUTER · 1U',
+    ports:[
+      {id:'modem_power', type:T.DC55, rx:40, ry:60, dir:'in', label:'DC 12В'},
+      {id:'modem_eth', type:T.RJ45, rx:100, ry:58, dir:'io', label:'LAN/WAN'},
+    ],
+    leds:[
+      {id:'modem_power_led', rx:520, ry:28, name:'ПИТАНИЕ'},
+      {id:'modem_4g_led', rx:565, ry:28, name:'4G LINK'},
+      {id:'modem_eth_led', rx:610, ry:28, name:'ETH'},
+    ]
+  },
+  {
+    id:'uuzs', x:RACK_X, y:395, w:RACK_W, h:230, label:'КОНТРОЛЛЕР УУЗС1-1Т0Р-Z', sub:'СЕНСОР · УСТРОЙСТВО УЗС',
+    ports:[
+      {id:'uuzs_power', type:T.TPWR, rx:40, ry:212, dir:'in', label:'PWR'},
+      {id:'uuzs_eth1', type:T.RJ45, rx:110, ry:212, dir:'io', label:'ETH1'},
+      {id:'uuzs_eth2', type:T.RJ45, rx:160, ry:212, dir:'io', label:'ETH2'},
+      {id:'uuzs_sat', type:T.F, rx:220, ry:212, dir:'in', label:'SAT IN'},
+      {id:'uuzs_audio', type:T.TAUD, rx:280, ry:212, dir:'out', label:'AUDIO OUT'},
+    ],
+    leds:[
+      {id:'uuzs_power_led', rx:44, ry:44, name:'ПИТАНИЕ', color:'green'},
+      {id:'uuzs_alarm_led', rx:44, ry:82, name:'АВАРИЯ', color:'red'},
+    ]
+  },
+];
+
+const outdoor = [
+  { id:'vsat', x:820, y:70, w:200, h:170, label:'НАРУЖНЫЙ БЛОК VSAT (ODU)', sub:'СПУТНИКОВАЯ АНТЕННА',
+    ports:[ {id:'vsat_out', type:T.F, rx:95, ry:150, dir:'out', label:'F-TYPE'} ] },
+  { id:'speaker', x:820, y:280, w:200, h:150, label:'ГРОМКОГОВОРИТЕЛЬ', sub:'РУПОРНЫЙ, ПРОМЫШЛЕННЫЙ',
+    ports:[ {id:'spk_in', type:T.TAUD, rx:20, ry:72, dir:'in', label:'AUDIO IN'} ] },
+];
+
+// build required "correct" cable set for Auto-assemble
+const REQUIRED_CABLES = [
+  ['ups_out1','pdu_in'],
+  ['pdu_out1','modem_power'],
+  ['pdu_out2','uuzs_power'],
+  ['modem_eth','uuzs_eth1'],
+  ['vsat_out','uuzs_sat'],
+  ['uuzs_audio','spk_in'],
+];
+
+/* ---------------------------------------------------------------
+   STATE
+--------------------------------------------------------------- */
+const state = {
+  cables: [], // {id, a, b, kind}
+  portPos: {}, // id -> {x,y,type,dir}
+  portEls: {}, // id -> svg <g class="port"> element, used for drag highlighting
+  selectedPort: null, // id of the port currently picked up, waiting for its pair
+  cableIdSeq: 1,
+};
+
+const svg = document.getElementById('stage');
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent){
+  const e = document.createElementNS(NS, tag);
+  for(const k in attrs) e.setAttribute(k, attrs[k]);
+  if(parent) parent.appendChild(e);
+  return e;
+}
+
+/* ---------------------------------------------------------------
+   RENDER: RACK PANEL SKELETON (ears + holes)
+--------------------------------------------------------------- */
+function renderRackFurniture(){
+  const g = document.getElementById('rackUnits');
+  // left/right ear rails with holes running full rack height
+  [RACK_X-22, RACK_X+RACK_W+8].forEach(ex=>{
+    el('rect', {x:ex, y:60, width:14, height:610, class:'rack-ear', rx:2}, g);
+    for(let hy=70; hy<660; hy+=22){
+      el('circle', {cx:ex+7, cy:hy, r:2, class:'rack-hole'}, g);
+    }
+  });
+}
+
+/* ---------------------------------------------------------------
+   RENDER: GENERIC DEVICE PANEL
+--------------------------------------------------------------- */
+function renderPanelBase(g, d){
+  el('rect', {x:d.x, y:d.y, width:d.w, height:d.h, rx:4, fill:'url(#panelGrad)', stroke:'#101113', 'stroke-width':1.5}, g);
+  el('rect', {x:d.x, y:d.y, width:d.w, height:d.h, rx:4, fill:'none', stroke:'#454a52', 'stroke-width':1}, g);
+  // mounting screws corners
+  [[8,8],[d.w-8,8],[8,d.h-8],[d.w-8,d.h-8]].forEach(([ox,oy])=>{
+    el('circle', {cx:d.x+ox, cy:d.y+oy, r:3, fill:'#0e0f11', stroke:'#4a4f57', 'stroke-width':.6}, g);
+  });
+  el('text', {x:d.x+16, y:d.y+18, class:'device-label'}, g).textContent = d.label;
+  el('text', {x:d.x+16, y:d.y+30, class:'device-sublabel'}, g).textContent = d.sub;
+}
+
+function renderPorts(g, d){
+  d.ports.forEach(p=>{
+    const abs = {x:d.x+p.rx, y:d.y+p.ry};
+    state.portPos[p.id] = {x:abs.x, y:abs.y, type:p.type, dir:p.dir, device:d.id, fixed:!!p.fixed};
+    const pg = el('g', {class:'port', 'data-port':p.id}, g);
+    state.portEls[p.id] = pg;
+    // enlarged invisible hit area — makes small connectors easy to grab on touch/mouse
+    el('circle', {cx:abs.x, cy:abs.y, r:15, fill:'transparent'}, pg);
+    const shape = PORT_SHAPE[p.type];
+    let shapeEl;
+    if(shape.shape==='rect'){
+      shapeEl = el('rect', {x:abs.x-shape.w/2, y:abs.y-shape.h/2, width:shape.w, height:shape.h, rx:2, fill:shape.fill, stroke:'#15161a', 'stroke-width':1, class:'port-shape'}, pg);
+    } else {
+      shapeEl = el('circle', {cx:abs.x, cy:abs.y, r:shape.r, fill:shape.fill, stroke:'#15161a', 'stroke-width':1, class:'port-shape'}, pg);
+    }
+    el('text', {x:abs.x, y:abs.y+18, class:'port-label', 'text-anchor':'middle'}, pg).textContent = p.label;
+    if(p.fixed){
+      // fixed mains cord from THIS device (the UPS) to a wall outlet — the only
+      // point in the whole rig that is "always live"; everything downstream
+      // must be cabled from here.
+      const sockX = 14, sockY = abs.y;
+      el('path', {d:`M ${abs.x-shape.w/2-2} ${abs.y} L ${sockX+16} ${sockY}`, stroke:'#e0553f', 'stroke-width':4, 'stroke-linecap':'round', opacity:.9}, g);
+      el('rect', {x:sockX-14, y:sockY-16, width:30, height:32, rx:4, fill:'#1c1e22', stroke:'#e0553f', 'stroke-width':1.4}, g);
+      el('rect', {x:sockX-6, y:sockY-7, width:4, height:9, rx:1, fill:'#e0553f'}, g);
+      el('rect', {x:sockX+2, y:sockY-7, width:4, height:9, rx:1, fill:'#e0553f'}, g);
+      el('circle', {cx:sockX, cy:sockY+9, r:2, fill:'#e0553f'}, g);
+      el('text', {x:sockX, y:sockY-22, class:'port-label', 'text-anchor':'middle', fill:'#e0553f'}, g).textContent='РОЗЕТКА 220В';
+      el('text', {x:sockX, y:sockY+28, class:'port-label', 'text-anchor':'middle', fill:'#e0553f'}, g).textContent='(сеть, ИБП)';
+    }
+    pg.addEventListener('click', (ev)=> onPortClick(ev, p.id));
+    pg.addEventListener('pointerenter', (ev)=> showTooltip(ev, `${p.label} — ${PORT_NAME[p.type]}${state.selectedPort ? '' : ' · клик — выбрать'}`));
+    pg.addEventListener('pointerleave', hideTooltip);
+    pg.addEventListener('pointermove', moveTooltip);
+  });
+}
+
+function renderLed(g, x, y, id, color, name){
+  const c = el('circle', {cx:x, cy:y, r:6, fill: color==='red' ? '#4d1d1d' : '#1d4d33', stroke:'#0c0d0e', 'stroke-width':1, id}, g);
+  el('text', {x:x, y:y-11, class:'led-text', 'text-anchor':'middle'}, g).textContent = name;
+  return c;
+}
+
+function renderUUZSFront(g, d){
+  // top sub-panel (control head) modeled on photo: ПИТАНИЕ/АВАРИЯ, LCD, buttons, switches
+  const topY = d.y + 34;
+  renderLed(g, d.x+44, topY+8, 'led_uuzs_power', 'green', 'ПИТАНИЕ');
+  renderLed(g, d.x+44, topY+38, 'led_uuzs_alarm', 'red', 'АВАРИЯ');
+
+  // small status LCD
+  const lcdX=d.x+90, lcdY=topY-6, lcdW=140, lcdH=48;
+  el('rect', {x:lcdX, y:lcdY, width:lcdW, height:lcdH, rx:3, fill:'url(#lcdGlow)', stroke:'#000', 'stroke-width':1.5}, g);
+  el('rect', {x:lcdX, y:lcdY, width:lcdW, height:lcdH, rx:3, fill:'none', stroke:'#0fe0e8', 'stroke-width':.6, opacity:.5}, g);
+  const lcdText1 = el('text', {x:lcdX+8, y:lcdY+20, fill:'#0fe0e8', 'font-family':'var(--mono)', 'font-size':11, id:'lcdLine1'}, g);
+  lcdText1.textContent = 'ОЖИДАНИЕ...';
+  const lcdText2 = el('text', {x:lcdX+8, y:lcdY+36, fill:'#0a8f94', 'font-family':'var(--mono)', 'font-size':9, id:'lcdLine2'}, g);
+  lcdText2.textContent = 'WAN:-- SAT:--';
+
+  // button cluster 3x2 — functional: navigates the LCD menu / quits alarms
+  const bx=d.x+260, by=topY-2;
+  const btnGlyphs = ['✕','▲','✓','◀','▼','▶'];
+  const btnIds   = ['btnX','btnUp','btnOk','btnLeft','btnDown','btnRight'];
+  for(let i=0;i<6;i++){
+    const col = i%3, row = Math.floor(i/3);
+    const cx = bx+col*30, cy = by+row*32;
+    const bg = el('g', {class:'uuzs-btn', 'data-btn':btnIds[i]}, g);
+    const circle = el('circle', {cx, cy, r:11, fill:'#1a1c1f', stroke:'#454a52', 'stroke-width':1}, bg);
+    el('text', {x:cx, y:cy+4, 'text-anchor':'middle', fill:'#8b919b', 'font-size':10, style:'pointer-events:none'}, bg).textContent = btnGlyphs[i];
+    bg.addEventListener('pointerdown', ()=>{
+      circle.setAttribute('fill', '#123742');
+      circle.setAttribute('stroke', 'var(--accent)');
+    });
+    const release = ()=>{ circle.setAttribute('fill','#1a1c1f'); circle.setAttribute('stroke','#454a52'); };
+    bg.addEventListener('pointerup', release);
+    bg.addEventListener('pointerleave', release);
+    bg.addEventListener('click', ()=> handleUuzsButton(btnIds[i]));
+    bg.addEventListener('pointerenter', (ev)=> showTooltip(ev, btnLabel(btnIds[i])));
+    bg.addEventListener('pointerleave', hideTooltip);
+    bg.addEventListener('pointermove', moveTooltip);
+  }
+
+  // switches АКБ / СЕТЬ
+  [{x:d.x+400, name:'АКБ', id:'sw_uuzs_akb'}, {x:d.x+450, name:'СЕТЬ', id:'sw_uuzs_set'}].forEach(sw=>{
+    el('text', {x:sw.x+12, y:topY-10, class:'device-sublabel', 'text-anchor':'middle'}, g).textContent = sw.name;
+    el('rect', {x:sw.x, y:topY-2, width:24, height:44, rx:3, fill:'#141516', stroke:'#454a52'}, g);
+    el('rect', {x:sw.x+4, y:topY+4, width:16, height:16, rx:2, fill:'#4d1d1d', id:sw.id}, g);
+  });
+
+  // logo text
+  el('text', {x:d.x+16, y:topY+70, fill:'#c7cbd1', 'font-family':'var(--mono)', 'font-size':13, 'font-weight':'bold'}, g).textContent = 'СЕНСОР';
+  el('text', {x:d.x+16, y:topY+83, class:'device-sublabel'}, g).textContent = 'КОНТРОЛЛЕР УУЗС1-1Т0Р-Z';
+
+  // lower big backlit panel (per photo) — decorative status screen with magenta accent stripe
+  const bigY = topY+98, bigX=d.x+230, bigW=150, bigH=76;
+  el('rect', {x:bigX, y:bigY, width:bigW, height:bigH, rx:4, fill:'url(#lcdGlow)', stroke:'#000', 'stroke-width':1.5}, g);
+  el('rect', {x:bigX, y:bigY+bigH-10, width:bigW, height:6, fill:'#c23f7a', opacity:.75}, g);
+  const bigText = el('text', {x:bigX+bigW/2, y:bigY+bigH/2+6, 'text-anchor':'middle', fill:'#0fe0e8', 'font-family':'var(--mono)', 'font-size':26, id:'lcdBig'}, g);
+  bigText.textContent = '--';
+  el('text', {x:bigX+8, y:bigY+14, fill:'#0a8f94', 'font-size':8, 'font-family':'var(--mono)'}, g).textContent='AUDIO';
+
+  el('rect', {x:d.x+16, y:bigY, width:190, height:bigH, rx:3, fill:'#1c1e22', stroke:'#33373e'}, g);
+  el('text', {x:d.x+24, y:bigY+18, class:'device-sublabel'}, g).textContent = 'СОБЫТИЯ:';
+  const evText = el('text', {x:d.x+24, y:bigY+36, fill:'#8b919b', 'font-family':'var(--mono)', 'font-size':10, id:'uuzsEvent1'}, g);
+  evText.textContent = 'Питание: нет';
+  const evText2 = el('text', {x:d.x+24, y:bigY+52, fill:'#8b919b', 'font-family':'var(--mono)', 'font-size':10, id:'uuzsEvent2'}, g);
+  evText2.textContent = 'Связь: нет';
+}
+
+function renderUpsFace(g, d){
+  // Real UPS displays show the mains input voltage & load — this is where
+  // "220В" belongs, not on the УУЗС controller downstream.
+  const lcdX=d.x+220, lcdY=d.y+38, lcdW=150, lcdH=40;
+  el('rect', {x:lcdX, y:lcdY, width:lcdW, height:lcdH, rx:3, fill:'url(#lcdGlow)', stroke:'#000', 'stroke-width':1.5}, g);
+  el('rect', {x:lcdX, y:lcdY, width:lcdW, height:lcdH, rx:3, fill:'none', stroke:'#0fe0e8', 'stroke-width':.6, opacity:.5}, g);
+  el('text', {x:lcdX+8, y:lcdY+17, fill:'#0fe0e8', 'font-family':'var(--mono)', 'font-size':13, 'font-weight':'bold', id:'lcdUpsVolt'}, g).textContent = 'ВХОД: 220В';
+  el('text', {x:lcdX+8, y:lcdY+31, fill:'#0a8f94', 'font-family':'var(--mono)', 'font-size':9, id:'lcdUpsLoad'}, g).textContent = 'НАГРУЗКА: 0/4';
+}
+
+function renderModemFace(g, d){
+  el('text', {x:d.x+16, y:d.y+52, class:'device-sublabel'}, g).textContent = 'POWER · DC IN';
+  el('text', {x:d.x+96, y:d.y+52, class:'device-sublabel'}, g).textContent = 'ETH';
+}
+
+function renderVsat(g, d){
+  el('rect', {x:d.x, y:d.y, width:d.w, height:d.h, rx:6, fill:'url(#panelGrad)', stroke:'#101113'}, g);
+  el('text', {x:d.x+14, y:d.y+18, class:'device-label'}, g).textContent = d.label;
+  el('text', {x:d.x+14, y:d.y+30, class:'device-sublabel'}, g).textContent = d.sub;
+  // dish
+  el('ellipse', {cx:d.x+d.w/2, cy:d.y+90, rx:70, ry:40, fill:'#3a3f47', stroke:'#5a5f67', 'stroke-width':2}, g);
+  el('ellipse', {cx:d.x+d.w/2, cy:d.y+90, rx:52, ry:28, fill:'#2b2f35'}, g);
+  el('line', {x1:d.x+d.w/2, y1:d.y+90, x2:d.x+d.w/2+18, y2:d.y+40, stroke:'#8b919b', 'stroke-width':3}, g);
+  el('circle', {cx:d.x+d.w/2+18, cy:d.y+40, r:4, fill:'#c7cbd1'}, g);
+}
+
+function renderSpeaker(g, d){
+  el('rect', {x:d.x, y:d.y, width:d.w, height:d.h, rx:6, fill:'url(#panelGrad)', stroke:'#101113'}, g);
+  el('text', {x:d.x+14, y:d.y+18, class:'device-label'}, g).textContent = d.label;
+  el('text', {x:d.x+14, y:d.y+30, class:'device-sublabel'}, g).textContent = d.sub;
+  // horn shape
+  el('path', {d:`M ${d.x+70} ${d.y+55} L ${d.x+150} ${d.y+30} L ${d.x+150} ${d.y+120} L ${d.x+70} ${d.y+95} Z`, fill:'#3a3f47', stroke:'#5a5f67', 'stroke-width':1.5}, g);
+  el('circle', {cx:d.x+65, cy:d.y+75, r:14, fill:'#1c1e22', stroke:'#5a5f67'}, g);
+  // sound rings group (hidden unless active)
+  const ringG = el('g', {id:'speakerRings', opacity:0}, g);
+  for(let i=0;i<3;i++){
+    el('circle', {cx:d.x+165, cy:d.y+75, r:6, fill:'none', stroke:'#43d18a', 'stroke-width':2, class:'ring', style:`animation-delay:${i*0.35}s`}, ringG);
+  }
+}
+
+function renderAll(){
+  const rg = document.getElementById('rackUnits');
+  rg.innerHTML=''; state.portPos={}; state.portEls={};
+  renderRackFurniture();
+  devices.forEach(d=>{
+    const dg = el('g', {}, rg);
+    renderPanelBase(dg, d);
+    if(d.id==='uuzs') renderUUZSFront(dg, d);
+    if(d.id==='modem') renderModemFace(dg, d);
+    if(d.id==='ups') renderUpsFace(dg, d);
+    if(d.leds){
+      d.leds.forEach(l=>{
+        if(d.id==='modem') renderLed(dg, d.x+l.rx, d.y+l.ry, l.id, l.color||'green', l.name);
+      });
+    }
+    renderPorts(dg, d);
+  });
+  const og = document.getElementById('outdoorUnits');
+  og.innerHTML='';
+  outdoor.forEach(d=>{
+    const dg = el('g', {}, og);
+    if(d.id==='vsat') renderVsat(dg, d);
+    if(d.id==='speaker') renderSpeaker(dg, d);
+    renderPorts(dg, d);
+  });
+}
+renderAll();
+
+/* ---------------------------------------------------------------
+   TOOLTIP
+--------------------------------------------------------------- */
+const tooltip = document.getElementById('tooltip');
+function showTooltip(ev, text){
+  tooltip.textContent = text;
+  tooltip.style.opacity = 1;
+  moveTooltip(ev);
+}
+function moveTooltip(ev){
+  tooltip.style.left = (ev.clientX+14)+'px';
+  tooltip.style.top = (ev.clientY+14)+'px';
+}
+function hideTooltip(){ tooltip.style.opacity = 0; }
+
+/* ---------------------------------------------------------------
+   TOAST
+--------------------------------------------------------------- */
+let toastTimer=null;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------------------------------------------------------------
+   LOG
+--------------------------------------------------------------- */
+function log(msg, kind){
+  const l = document.getElementById('log');
+  const d = document.createElement('div');
+  d.className = kind||'';
+  const now = new Date();
+  const ts = now.toLocaleTimeString('ru-RU');
+  d.textContent = `[${ts}] ${msg}`;
+  l.appendChild(d);
+  l.scrollTop = l.scrollHeight;
+}
+
+/* ---------------------------------------------------------------
+   CABLE DRAWING (bezier sag)
+--------------------------------------------------------------- */
+function bezierPath(x1,y1,x2,y2, sag){
+  const midX = (x1+x2)/2;
+  const dist = Math.hypot(x2-x1, y2-y1);
+  const s = sag!==undefined ? sag : Math.min(90, 30+dist*0.18);
+  const midY = Math.max(y1,y2) + s;
+  return `M ${x1} ${y1} C ${midX} ${midY}, ${midX} ${midY}, ${x2} ${y2}`;
+}
+
+function svgPoint(ev){
+  const pt = svg.createSVGPoint();
+  pt.x = ev.clientX; pt.y = ev.clientY;
+  const ctm = svg.getScreenCTM().inverse();
+  const p = pt.matrixTransform(ctm);
+  return {x:p.x, y:p.y};
+}
+
+/* ---------------------------------------------------------------
+   DRAG-TO-CONNECT (optimized)
+   - grabbing an already-wired port picks the cable up for rewiring
+   - compatible ports light up green the instant you start dragging
+   - click a port to pick it up, click a second port to connect — no dragging
+   - compatible ports light up green the instant you select a port
+   - grabbing an already-wired port picks the cable up for rewiring
+   - a port can only ever hold one cable — plugging in auto-unplugs
+--------------------------------------------------------------- */
+function cablesOnPort(portId){
+  return state.cables.filter(c => c.a===portId || c.b===portId);
+}
+
+function setPortHighlight(mode){
+  // mode: null clears everything; otherwise {fromId, compatible:[ids]}
+  Object.keys(state.portEls).forEach(id=>{
+    const pg = state.portEls[id];
+    pg.classList.remove('port-compatible','port-dim','port-selected');
+  });
+  if(!mode) return;
+  state.portEls[mode.fromId].classList.add('port-selected');
+  Object.keys(state.portEls).forEach(id=>{
+    if(id===mode.fromId) return;
+    const pg = state.portEls[id];
+    if(mode.compatible.includes(id)) pg.classList.add('port-compatible');
+    else pg.classList.add('port-dim');
+  });
+}
+
+function compatibleTargets(fromId){
+  const from = state.portPos[fromId];
+  return Object.keys(state.portPos).filter(id=>{
+    const other = state.portPos[id];
+    return id!==fromId && !other.fixed && compatible(from.type, other.type);
+  });
+}
+
+function clearSelection(){
+  state.selectedPort = null;
+  setPortHighlight(null);
+}
+
+function onPortClick(ev, portId){
+  ev.stopPropagation();
+  const p = state.portPos[portId];
+  if(p.fixed){ toast('Этот порт подключён стационарно — от него нельзя отсоединить кабель.'); return; }
+
+  // no active selection yet — pick this port as the connection's first end
+  if(!state.selectedPort){
+    const existing = cablesOnPort(portId)[0];
+    if(existing){
+      removeCable(existing.id, true);
+      log(`Кабель поднят с порта ${portId} — нажмите на новый разъём`, 'info');
+    }
+    state.selectedPort = portId;
+    setPortHighlight({fromId:portId, compatible:compatibleTargets(portId)});
+    toast('Порт выбран — нажмите на второй разъём для соединения');
+    return;
+  }
+
+  // clicking the same port again cancels the selection
+  if(state.selectedPort===portId){
+    clearSelection();
+    toast('Выбор снят');
+    return;
+  }
+
+  const fromId = state.selectedPort;
+  const from = state.portPos[fromId];
+  if(!compatible(from.type, p.type)){
+    flashReject(portId, `Несовместимые разъёмы: ${PORT_NAME[from.type]} ↛ ${PORT_NAME[p.type]}`);
+    return; // keep first selection active so the user can try another port
+  }
+  addCable(fromId, portId);
+  clearSelection();
+}
+
+function flashReject(portId, msg){
+  const pg = state.portEls[portId];
+  pg.classList.add('shake');
+  toast(msg || 'Нельзя соединить эти порты.');
+  log(msg || 'Ошибка соединения: несовместимые порты', 'err');
+  setTimeout(()=>pg.classList.remove('shake'), 380);
+}
+
+// clicking anywhere that isn't a port (or a cable) cancels a pending selection
+svg.addEventListener('click', (ev)=>{
+  const onPort = ev.target.closest && ev.target.closest('.port');
+  const onCable = ev.target.closest && ev.target.closest('.cable-hit');
+  if(!onPort && !onCable && state.selectedPort){
+    clearSelection();
+    toast('Выбор снят');
+  }
+});
+
+function addCable(a,b, silent){
+  // enforce exactly one cable per port — plugging in auto-unplugs whatever was there
+  [a,b].forEach(portId=>{
+    cablesOnPort(portId).forEach(c=>{
+      state.cables = state.cables.filter(x=>x.id!==c.id);
+      log(`Разъём ${portId} был занят — прежний кабель автоматически отключён`, 'info');
+    });
+  });
+  const kind = KIND_OF[state.portPos[a].type];
+  const c = { id:'cable_'+(state.cableIdSeq++), a, b, kind };
+  state.cables.push(c);
+  drawCables();
+  if(!silent){
+    toast('Кабель подключён');
+    log(`Соединение: ${a} → ${b}`, 'ok');
+  }
+  tick();
+}
+function removeCable(id, silent){
+  state.cables = state.cables.filter(c=>c.id!==id);
+  drawCables();
+  if(!silent) log('Кабель отсоединён', 'info');
+  tick();
+
+}
+
+const cableLayer = document.getElementById('cableLayer');
+function drawCables(){
+  cableLayer.innerHTML='';
+  state.cables.forEach(c=>{
+    const a = state.portPos[c.a], b = state.portPos[c.b];
+    if(!a||!b) return;
+    const d = bezierPath(a.x,a.y,b.x,b.y);
+    const color = WIRE_COLOR[c.kind];
+    const hit = el('path', {d, class:'cable-hit'}, cableLayer);
+    el('path', {d, stroke:color, 'stroke-width':4, class:'cable-visible', filter:'url(#softGlow)'}, cableLayer);
+    hit.style.pointerEvents='stroke';
+    hit.addEventListener('click', ()=>{ if(confirm('Отсоединить кабель?')) removeCable(c.id); });
+    hit.addEventListener('pointerenter', (ev)=> showTooltip(ev, 'Клик — отсоединить кабель'));
+    hit.addEventListener('pointerleave', hideTooltip);
+    hit.addEventListener('pointermove', moveTooltip);
+  });
+}
+
+/* ---------------------------------------------------------------
+   STATE MACHINE
+--------------------------------------------------------------- */
+function hasCable(a,b){
+  return state.cables.some(c => (c.a===a&&c.b===b) || (c.a===b&&c.b===a));
+}
+function hasCableAny(aOptions, bOptions){
+  for(const a of aOptions) for(const b of bOptions) if(hasCable(a,b)) return true;
+  return false;
+}
+
+let audioCtx=null, oscA=null, oscB=null, gainNode=null, audioPlaying=false;
+function startAudio(){
+  if(audioPlaying) return;
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    oscA = audioCtx.createOscillator(); oscA.type='sine'; oscA.frequency.value=440;
+    oscB = audioCtx.createOscillator(); oscB.type='sine'; oscB.frequency.value=554;
+    gainNode = audioCtx.createGain(); gainNode.gain.value=0.0001;
+    oscA.connect(gainNode); oscB.connect(gainNode); gainNode.connect(audioCtx.destination);
+    oscA.start(); oscB.start();
+    gainNode.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime+0.4);
+    audioPlaying = true;
+  }catch(e){ /* autoplay restrictions etc */ }
+}
+function stopAudio(){
+  if(!audioPlaying) return;
+  try{
+    gainNode.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime+0.3);
+    setTimeout(()=>{ try{ oscA.stop(); oscB.stop(); }catch(e){} }, 350);
+  }catch(e){}
+  audioPlaying=false;
+}
+
+/* ---------------------------------------------------------------
+   УУЗС CONTROL PANEL — LCD menu driven by the front-panel buttons
+--------------------------------------------------------------- */
+const uuzsMenus = [
+  { title:'ГЛАВНЫЙ ЭКРАН', line:s => `WAN:${s.wan?'UP':'--'} SAT:${s.sat?'LOCK':'--'}` },
+  { title:'ПИТАНИЕ',       line:s => `УУЗС:${s.uuzsPowered?'ON':'OFF'} (напряжение см. на ИБП)` },
+  { title:'СЕТЬ WAN',      line:s => s.wan ? 'ETH LINK UP 100M' : 'НЕТ СВЯЗИ' },
+  { title:'СПУТНИК SAT',   line:s => s.sat ? 'LNB LOCK OK' : 'НЕТ ЛОКА' },
+  { title:'АУДИОТРАКТ',    line:s => s.audio ? 'ГРОМКАЯ СВЯЗЬ АКТ.' : 'ВЫКЛЮЧЕН' },
+  { title:'О ПРИБОРЕ',     line:() => 'FW v2.3 build 118' },
+];
+let uuzsMenuIndex = 0;
+let lastSysStatus = {upsLive:true, pduPowered:false, modemPowered:false, uuzsPowered:false, wan:false, sat:false, audio:false};
+let alarmMuted = false, alarmMuteTimer = null;
+
+function btnLabel(id){
+  return {
+    btnUp:'▲ — вверх по меню', btnDown:'▼ — вниз по меню',
+    btnLeft:'◀ — пред. пункт', btnRight:'▶ — след. пункт',
+    btnOk:'✓ — обновить / подтвердить', btnX:'✕ — домой / квитировать аварию'
+  }[id] || '';
+}
+
+function renderUuzsMenu(status){
+  const l1 = document.getElementById('lcdLine1');
+  const l2 = document.getElementById('lcdLine2');
+  if(!l1||!l2) return;
+  const m = uuzsMenus[uuzsMenuIndex];
+  l1.textContent = m.title;
+  l2.textContent = m.line(status);
+}
+
+function handleUuzsButton(id){
+  switch(id){
+    case 'btnUp': case 'btnLeft':
+      uuzsMenuIndex = (uuzsMenuIndex - 1 + uuzsMenus.length) % uuzsMenus.length;
+      break;
+    case 'btnDown': case 'btnRight':
+      uuzsMenuIndex = (uuzsMenuIndex + 1) % uuzsMenus.length;
+      break;
+    case 'btnOk':
+      log('УУЗС: обновление показаний (✓)', 'info');
+      break;
+    case 'btnX':
+      uuzsMenuIndex = 0;
+      if(!lastSysStatus.uuzsPowered){
+        alarmMuted = true;
+        clearTimeout(alarmMuteTimer);
+        alarmMuteTimer = setTimeout(()=>{ alarmMuted = false; }, 5000);
+        log('УУЗС: авария квитирована (мьют мигания 5с)', 'info');
+      } else {
+        log('УУЗС: возврат на главный экран (✕)', 'info');
+      }
+      break;
+  }
+  renderUuzsMenu(lastSysStatus);
+}
+
+let prevAudioLink=false;
+function tick(){
+  const upsLive = true;
+  const pduPowered = hasCable('ups_out1','pdu_in')||hasCable('ups_out2','pdu_in')||hasCable('ups_out3','pdu_in')||hasCable('ups_out4','pdu_in');
+  const modemPowered = pduPowered && hasCableAny(['pdu_out1','pdu_out2','pdu_out3','pdu_out4'], ['modem_power']);
+  const uuzsPowered = pduPowered && hasCableAny(['pdu_out1','pdu_out2','pdu_out3','pdu_out4'], ['uuzs_power']);
+  const wan = modemPowered && hasCableAny(['modem_eth'], ['uuzs_eth1','uuzs_eth2']);
+  const sat = uuzsPowered && hasCable('vsat_out','uuzs_sat');
+  const upsOutUsed = ['ups_out1','ups_out2','ups_out3','ups_out4'].filter(id => state.cables.some(c=>c.a===id||c.b===id)).length;
+  const lcdUpsVolt = document.getElementById('lcdUpsVolt');
+  const lcdUpsLoad = document.getElementById('lcdUpsLoad');
+  if(lcdUpsVolt) lcdUpsVolt.textContent = upsLive ? 'ВХОД: 220В' : 'ВХОД: АВАРИЯ';
+  if(lcdUpsLoad) lcdUpsLoad.textContent = `НАГРУЗКА: ${upsOutUsed}/4`;
+  const audio = uuzsPowered && (wan||sat) && hasCable('uuzs_audio','spk_in');
+
+  setDot('dotUps','valUps', upsLive, upsLive?'220В':'нет');
+  setDot('dotPdu','valPdu', pduPowered, pduPowered?'ON':'OFF');
+  setDot('dotModem','valModem', modemPowered, modemPowered?'ON':'OFF');
+  setDot('dotUuzsPwr','valUuzsPwr', uuzsPowered, uuzsPowered?'ON':'OFF');
+  setDot('dotWan','valWan', wan, wan?'UP':'DOWN');
+  setDot('dotSat','valSat', sat, sat?'LOCK':'NO LOCK');
+  setDot('dotAudio','valAudio', audio, audio?'ACTIVE':'—');
+
+  // Modem LEDs
+  setLed('modem_power_led', modemPowered, 'green');
+  setLed('modem_4g_led', modemPowered, 'green', modemPowered);
+  setLed('modem_eth_led', wan, 'green', wan);
+
+  // UUZS LEDs (alarm can be quieted for 5s via the ✕ button — stays solid, stops blinking)
+  setLed('led_uuzs_power', uuzsPowered, 'green');
+  setLed('led_uuzs_alarm', !uuzsPowered, 'red', !uuzsPowered && !alarmMuted);
+
+  // switches
+  const setSw = document.getElementById('sw_uuzs_set');
+  if(setSw) setSw.setAttribute('fill', uuzsPowered ? '#ff4444' : '#4d1d1d');
+  const akbSw = document.getElementById('sw_uuzs_akb');
+  if(akbSw) akbSw.setAttribute('fill', upsLive ? '#7a2020' : '#4d1d1d');
+
+  // LCD — driven by the front-panel button menu, content refreshed live
+  lastSysStatus = {upsLive, pduPowered, modemPowered, uuzsPowered, wan, sat, audio};
+  renderUuzsMenu(lastSysStatus);
+  const big = document.getElementById('lcdBig');
+  if(big) big.textContent = audio ? '))) ' : (sat ? 'SAT' : (wan ? 'WAN' : '--'));
+
+  const ev1 = document.getElementById('uuzsEvent1');
+  const ev2 = document.getElementById('uuzsEvent2');
+  if(ev1) ev1.textContent = 'Питание: ' + (uuzsPowered?'есть':'нет');
+  if(ev2) ev2.textContent = 'Связь: ' + (wan&&sat?'WAN+SAT':wan?'WAN':sat?'SAT':'нет');
+
+  // speaker rings + audio
+  const rings = document.getElementById('speakerRings');
+  if(rings) rings.style.opacity = audio ? 1 : 0;
+  if(audio && !prevAudioLink){ startAudio(); log('Аудиотракт активен: идёт тестовый сигнал', 'ok'); }
+  if(!audio && prevAudioLink){ stopAudio(); log('Аудиотракт остановлен', 'info'); }
+  prevAudioLink = audio;
+}
+function setDot(dotId, valId, on, text){
+  const dot = document.getElementById(dotId);
+  const val = document.getElementById(valId);
+  if(dot){ dot.classList.toggle('on', !!on); }
+  if(val){ val.textContent = text; val.style.color = on ? 'var(--led-green)' : 'var(--text-dim)'; }
+}
+function setLed(id, on, color, blink){
+  const led = document.getElementById(id);
+  if(!led) return;
+  const onColor = color==='red' ? '#ff4444' : '#39e07a';
+  const offColor = color==='red' ? '#4d1d1d' : '#1d4d33';
+  led.setAttribute('fill', on ? onColor : offColor);
+  led.style.filter = on ? 'drop-shadow(0 0 4px '+onColor+')' : 'none';
+  led.classList.toggle('blinking', !!blink && on);
+}
+setInterval(tick, 100);
+tick();
+
+/* ---------------------------------------------------------------
+   RESET / AUTO-ASSEMBLE
+--------------------------------------------------------------- */
+document.getElementById('btnReset').addEventListener('click', ()=>{
+  state.cables = [];
+  drawCables();
+  stopAudio();
+  log('Схема сброшена', 'info');
+  tick();
+});
+
+document.getElementById('btnAuto').addEventListener('click', ()=>{
+  const btn = document.getElementById('btnAuto');
+  btn.disabled = true;
+  state.cables = state.cables.filter(c => false); // clear first for clean demo
+  drawCables();
+  let i=0;
+  log('Запуск авто-сборки…', 'info');
+  const timer = setInterval(()=>{
+    if(i>=REQUIRED_CABLES.length){
+      clearInterval(timer);
+      btn.disabled = false;
+      log('Авто-сборка завершена', 'ok');
+      return;
+    }
+    const [a,b] = REQUIRED_CABLES[i];
+    addCable(a,b,true);
+    log(`Авто: ${a} → ${b}`, 'ok');
+    i++;
+  }, 450);
+});
+
+log('Симулятор готов. Нажмите на первый разъём, затем на второй — кабель подключится.', 'info');
+
+})();
+</script>
+</body>
+</html>
